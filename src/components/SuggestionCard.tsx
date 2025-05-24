@@ -67,7 +67,7 @@ const SuggestionCard: React.FC<SuggestionCardProps> = ({ restaurant }) => {
             View on Map
           </Button>
           <Button
-            className="flex-1 bg-gradient-to-r from-sunset-500 to-sunset-600 hover:from-sunset-600 hover:to-sunset-700 text-white rounded-xl py-2 shadow-md hover:shadow-lg transition-all duration-200"
+            className="flex-1 rounded-xl py-2 shadow-md hover:shadow-lg transition-all duration-200"
           >
             Book Now
           </Button>
