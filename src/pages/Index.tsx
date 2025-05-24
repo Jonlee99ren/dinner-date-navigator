@@ -84,7 +84,6 @@ const Index: React.FC = () => {
     setShowLocationModal(false);
     setShowManualLocationModal(true);
   };
-
   const handleManualLocationConfirm = (location: string) => {
     // Create a basic location object from manual entry
     const manualLocationData: LocationData = {
@@ -94,6 +93,9 @@ const Index: React.FC = () => {
       city: location,
       country: 'Malaysia'
     };
+    
+    // Save to location service so it's available to OpenRouter
+    locationService.setManualLocation(manualLocationData);
     setLocationData(manualLocationData);
     setShowManualLocationModal(false);
   };
@@ -144,9 +146,7 @@ const Index: React.FC = () => {
           onDeny={handleLocationPermissionDeny}
           onManualEntry={handleManualLocationEntry}
           isLoading={isRequestingLocation}
-        />
-
-        {/* Manual Location Entry Modal */}
+        />        {/* Manual Location Entry Modal */}
         <ManualLocationModal
           isOpen={showManualLocationModal}
           onConfirm={handleManualLocationConfirm}

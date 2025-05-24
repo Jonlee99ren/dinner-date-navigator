@@ -143,6 +143,11 @@ export class LocationService {
     localStorage.removeItem('userLocation');
   }
 
+  setManualLocation(locationData: LocationData): void {
+    this.currentLocation = locationData;
+    this.saveLocationToStorage(locationData);
+  }
+
   private saveLocationToStorage(location: LocationData): void {
     try {
       localStorage.setItem('userLocation', JSON.stringify(location));
