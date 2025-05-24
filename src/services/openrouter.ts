@@ -74,11 +74,22 @@ export class OpenRouterService {
         console.error('Web search failed:', error);
         webSearchResults = '';
       }
-    }
-
-    const systemPrompt = {
+    }    const systemPrompt = {
       role: 'system' as const,
-      content: `You are a smart dinner planner assistant. Help users find restaurants based on their preferences including location, cuisine, budget, ambiance, and timing. Be conversational, friendly, and ask clarifying questions if needed. Keep responses concise and helpful. When you have enough information about their preferences (location, budget, cuisine type, timing), let them know you can help them find restaurants.
+      content: `You are a smart dinner planner assistant. Help users find restaurants based on their preferences including location, cuisine, budget, ambiance, and timing. Be conversational, friendly, and ask clarifying questions if needed. Keep responses concise and helpful.
+
+      IMPORTANT BEHAVIOR:
+      - When you have gathered enough information about their dining preferences (such as cuisine type, general budget range, or dining atmosphere), say "I can help you find restaurants" or "Let me find some restaurants for you" to trigger the restaurant suggestion system.
+      - If the user provides specific cuisine, location, or budget information, acknowledge it and indicate you're ready to help find restaurants.
+      - Don't keep asking for more details if you have basic preferences - work with what they've given you.
+      - If they mention a cuisine type, budget range, or location, that's usually enough to start finding restaurants.
+      
+      FORMATTING INSTRUCTIONS:
+      - Always format your responses using proper Markdown syntax
+      - Use **bold** for emphasis on important points
+      - Use bullet points (-) or numbered lists when listing items
+      - Use headers (##) for main sections if organizing longer responses
+      - Make your responses visually appealing and easy to read
       
       ${locationContext}
       
@@ -144,11 +155,28 @@ export class OpenRouterService {
     });
     
     return searchTerms.length > 0 ? searchTerms.join(' ') : 'restaurant dining';
-  }
-  async extractPreferences(conversation: string[]): Promise<any> {
+  }  async extractPreferences(conversation: string[]): Promise<any> {
+    // Get current location data for context
+    const locationData = this.locationService.getCurrentLocation();
+    const locationContext = this.buildLocationContext(locationData);
+    
     const systemPrompt = {
       role: 'system' as const,
-      content: `Analyze the conversation and extract dining preferences. Return a JSON object with location, time, budget, and preferences array. If information is missing, use reasonable defaults.`
+      content: `Analyze the conversation and extract dining preferences. Return a JSON object with the following structure:
+      {
+        "location": "string - user's preferred dining location or 'Near me' if not specified",
+        "time": "string - preferred time or 'Tonight, 7 PM' as default",
+        "budget": "string - budget range like 'RM50-100' or use reasonable default",
+        "preferences": ["array of dining preferences like cuisine types, atmosphere, etc."]
+      }
+      
+      IMPORTANT:
+      - Always provide reasonable defaults if information is missing
+      - For location, use user's current location if available: ${locationContext || 'Malaysia'}
+      - For budget, estimate based on context or use 'RM60-120' as default
+      - For preferences, extract any mentioned cuisine, atmosphere, or dining style
+      - Be lenient and work with partial information
+      - If minimal info is provided, create a reasonable preference profile`
     };
 
     const userPrompt = {
@@ -159,14 +187,24 @@ export class OpenRouterService {
     const response = await this.generateResponse([systemPrompt, userPrompt]);
     
     try {
-      return JSON.parse(response);
-    } catch {
-      // Fallback if JSON parsing fails
+      const parsed = JSON.parse(response);
+      
+      // Ensure we have reasonable defaults
       return {
-        location: 'Near me',
+        location: parsed.location || (locationData ? this.locationService.getLocationString() : 'Malaysia'),
+        time: parsed.time || 'Tonight, 7 PM',
+        budget: parsed.budget || 'RM60-120',
+        preferences: Array.isArray(parsed.preferences) && parsed.preferences.length > 0 
+          ? parsed.preferences 
+          : ['Good Food', 'Nice Atmosphere']
+      };
+    } catch {
+      // Enhanced fallback with current location if available
+      return {
+        location: locationData ? this.locationService.getLocationString() : 'Near me',
         time: 'Tonight, 7 PM',
-        budget: 'RM100–150',
-        preferences: ['Casual Dining']
+        budget: 'RM60-120',
+        preferences: ['Good Food', 'Casual Dining']
       };
     }
   }
@@ -176,11 +214,25 @@ export class OpenRouterService {
     const searchQuery = `${preferences.preferences?.join(' ')} restaurants ${preferences.location} ${preferences.budget}`;
     
     try {
-      const webResults = await this.tavilyService.searchRestaurants(searchQuery, preferences.location);
-      
-      const systemPrompt = {
+      const webResults = await this.tavilyService.searchRestaurants(searchQuery, preferences.location);      const systemPrompt = {
         role: 'system' as const,
-        content: `You are a restaurant recommendation expert. Based on the user's preferences and current restaurant information from the web, provide 3-5 specific restaurant suggestions with details like name, cuisine type, price range, and why it matches their preferences. Format as a clear, organized response.
+        content: `You are a restaurant recommendation expert. Based on the user's preferences and current restaurant information from the web, provide 3-5 specific restaurant suggestions with details like name, cuisine type, price range, and why it matches their preferences.
+        
+        FORMAT YOUR RESPONSE IN MARKDOWN:
+        - Use **bold** for restaurant names and important details
+        - Use bullet points (-) for features and key highlights
+        - Use proper headers (## or ###) if organizing sections
+        - Use emphasis (*italic*) for special notes
+        - Make the response visually appealing and easy to read
+        - Structure your response to be informative yet concise
+        
+        EXAMPLE FORMAT:
+        ## Top Restaurant Recommendations
+        
+        **Restaurant Name** - Cuisine Type
+        - Location and distance
+        - Price range: RM XX-XX
+        - *Why it's perfect for you:* explanation
         
         Current restaurant information:
         ${webResults}`

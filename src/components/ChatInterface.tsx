@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Send, Bot, User, Sparkles, MapPin, Clock, DollarSign } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { OpenRouterService } from '@/services/openrouter';
+import ReactMarkdown from 'react-markdown';
 
 interface Message {
   id: string;
@@ -15,12 +16,11 @@ interface ChatInterfaceProps {
   onRestaurantSuggestions?: (preferences: any) => void;
 }
 
-const ChatInterface: React.FC<ChatInterfaceProps> = ({ onRestaurantSuggestions }) => {
-  const [messages, setMessages] = useState<Message[]>([
+const ChatInterface: React.FC<ChatInterfaceProps> = ({ onRestaurantSuggestions }) => {  const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
       type: 'assistant',
-      content: "Hi! I'm your AI dining assistant. I can help you find the perfect restaurant for any occasion. Just tell me what you're looking for - cuisine type, location, budget, atmosphere, or any specific preferences you have in mind! 🍽️",
+      content: "Hi! I'm your **AI dining assistant**. I can help you find the perfect restaurant for any occasion. Just tell me what you're looking for:\n\n- **Cuisine type** (Italian, Japanese, etc.)\n- **Location** preference\n- **Budget** range\n- **Atmosphere** (romantic, casual, etc.)\n\nWhat sounds good to you? 🍽️",
       timestamp: new Date()
     }
   ]);
@@ -74,11 +74,12 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ onRestaurantSuggestions }
           content: response,
           timestamp: new Date()
         }];
-      });
-
-      // Check if we should extract preferences and show restaurant suggestions
+      });      // Check if we should extract preferences and show restaurant suggestions
       const conversationHistory = [...messages, userMessage].map(msg => msg.content);
-      if (shouldShowSuggestions(userMessage.content, response)) {
+      const messageCount = conversationHistory.length;
+      
+      if (shouldShowSuggestions(userMessage.content, response) || 
+          (messageCount >= 4 && hasBasicPreferences(conversationHistory))) {
         setTimeout(async () => {
           try {
             const preferences = await openRouterService.extractPreferences(conversationHistory);
@@ -102,26 +103,69 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ onRestaurantSuggestions }
 
     setIsTyping(false);
   };
+  const hasBasicPreferences = (conversationHistory: string[]): boolean => {
+    const conversation = conversationHistory.join(' ').toLowerCase();
+    
+    const hasCuisine = ['italian', 'chinese', 'japanese', 'korean', 'thai', 'indian', 
+                       'western', 'local', 'halal', 'pizza', 'burger', 'seafood',
+                       'vegetarian', 'mexican', 'french', 'sushi', 'pasta'].some(cuisine => 
+                       conversation.includes(cuisine));
+    
+    const hasBudget = ['rm', 'budget', 'price', 'cheap', 'expensive', 'affordable',
+                      'ringgit', '$', 'dollar'].some(budget => conversation.includes(budget));
+    
+    const hasLocation = ['near', 'location', 'area', 'place', 'kl', 'kuala lumpur',
+                        'petaling jaya', 'selangor', 'malaysia'].some(loc => conversation.includes(loc));
+    
+    const hasAtmosphere = ['romantic', 'casual', 'fine dining', 'family', 'rooftop',
+                          'cozy', 'elegant', 'atmosphere', 'ambiance'].some(atm => conversation.includes(atm));
+    
+    // Return true if at least one preference is mentioned
+    return hasCuisine || hasBudget || hasLocation || hasAtmosphere;
+  };
 
   const shouldShowSuggestions = (userInput: string, aiResponse: string): boolean => {
-    const indicators = [
-      'perfect', 'great choice', 'sounds good', 'let me find', 'here are some',
-      'based on your preferences', 'I recommend', 'suggest'
+    // Check for various indicators that the AI is ready to provide suggestions
+    const aiReadyIndicators = [
+      'let me find', 'i can help you find', 'here are some', 'i recommend',
+      'based on your preferences', 'perfect', 'great choice', 'sounds good',
+      'i\'ll help you find', 'let me suggest', 'find restaurants', 'restaurant suggestions'
     ];
     
+    // Check if user has provided key information
     const hasLocation = userInput.toLowerCase().includes('near') || 
                        userInput.toLowerCase().includes('in ') ||
-                       userInput.toLowerCase().includes('location');
+                       userInput.toLowerCase().includes('location') ||
+                       userInput.toLowerCase().includes('around');
     
     const hasBudget = userInput.toLowerCase().includes('rm') || 
                      userInput.toLowerCase().includes('budget') ||
-                     userInput.toLowerCase().includes('price');
+                     userInput.toLowerCase().includes('price') ||
+                     userInput.toLowerCase().includes('cheap') ||
+                     userInput.toLowerCase().includes('expensive') ||
+                     userInput.toLowerCase().includes('affordable');
     
-    const hasIndicator = indicators.some(indicator => 
+    const hasCuisine = ['italian', 'chinese', 'japanese', 'korean', 'thai', 'indian', 
+                       'western', 'local', 'halal', 'pizza', 'burger', 'seafood',
+                       'vegetarian', 'mexican', 'french'].some(cuisine => 
+                       userInput.toLowerCase().includes(cuisine));
+    
+    const hasAtmosphere = ['romantic', 'casual', 'fine dining', 'family', 
+                          'rooftop', 'beachside', 'cozy', 'elegant'].some(atmosphere => 
+                          userInput.toLowerCase().includes(atmosphere));
+    
+    // Check if AI response indicates readiness to suggest
+    const aiIsReady = aiReadyIndicators.some(indicator => 
       aiResponse.toLowerCase().includes(indicator)
     );
-
-    return (hasLocation || hasBudget) && hasIndicator;
+    
+    // Check if user has provided enough information (at least 2 key pieces)
+    const infoCount = [hasLocation, hasBudget, hasCuisine, hasAtmosphere].filter(Boolean).length;
+    
+    // Show suggestions if:
+    // 1. AI indicates it's ready AND user has provided some info, OR
+    // 2. User has provided 2+ pieces of information
+    return (aiIsReady && infoCount >= 1) || infoCount >= 2;
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -179,8 +223,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ onRestaurantSuggestions }
                   message.type === 'user'
                     ? 'bg-blue-500 text-white'
                     : 'bg-white border border-gray-200 text-gray-900'
-                }`}>
-                  {message.isLoading ? (
+                }`}>                  {message.isLoading ? (
                     <div className="flex items-center space-x-2">
                       <div className="flex space-x-1">
                         <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
@@ -188,6 +231,11 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ onRestaurantSuggestions }
                         <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
                       </div>
                       <span className="text-sm text-gray-500">AI is thinking...</span>
+                    </div>                  ) : message.type === 'assistant' ? (
+                    <div className="text-sm leading-relaxed chat-markdown">
+                      <ReactMarkdown>
+                        {message.content}
+                      </ReactMarkdown>
                     </div>
                   ) : (
                     <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.content}</p>
@@ -213,6 +261,26 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ onRestaurantSuggestions }
                   </button>
                 ))}
               </div>
+            </div>          )}
+
+          {/* Show Restaurant Suggestions Button (after a few messages) */}
+          {messages.length > 3 && (
+            <div className="flex justify-center py-4">
+              <Button
+                onClick={async () => {
+                  const conversationHistory = messages.map(msg => msg.content);
+                  try {
+                    const preferences = await openRouterService.extractPreferences(conversationHistory);
+                    onRestaurantSuggestions?.(preferences);
+                  } catch (error) {
+                    console.error('Error extracting preferences:', error);
+                  }
+                }}
+                className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white px-6 py-3 rounded-xl"
+              >
+                <Sparkles className="w-4 h-4 mr-2" />
+                Show Restaurant Suggestions
+              </Button>
             </div>
           )}
 

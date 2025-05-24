@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ArrowLeft, MapPin, Clock, Star, Phone, Globe, Heart, Share2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { OpenRouterService } from '@/services/openrouter';
+import ReactMarkdown from 'react-markdown';
 
 interface RestaurantSuggestionsProps {
   onBack: () => void;
@@ -216,10 +217,23 @@ const RestaurantSuggestions: React.FC<RestaurantSuggestionsProps> = ({ onBack, p
                   <div className="h-4 bg-gray-200 rounded animate-pulse"></div>
                   <div className="h-4 bg-gray-200 rounded animate-pulse w-3/4"></div>
                   <div className="h-4 bg-gray-200 rounded animate-pulse w-1/2"></div>
-                </div>
-              ) : (
-                <div className="text-gray-700 text-sm leading-relaxed whitespace-pre-line">
-                  {aiSuggestions}
+                </div>              ) : (
+                <div className="text-gray-700 text-sm leading-relaxed chat-markdown">
+                  <ReactMarkdown
+                    components={{
+                      p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                      ul: ({ children }) => <ul className="mb-2 last:mb-0 ml-4 list-disc">{children}</ul>,
+                      ol: ({ children }) => <ol className="mb-2 last:mb-0 ml-4 list-decimal">{children}</ol>,
+                      li: ({ children }) => <li className="mb-1">{children}</li>,
+                      strong: ({ children }) => <strong className="font-semibold text-gray-900">{children}</strong>,
+                      em: ({ children }) => <em className="italic">{children}</em>,
+                      h1: ({ children }) => <h1 className="text-lg font-bold mb-2 text-gray-900">{children}</h1>,
+                      h2: ({ children }) => <h2 className="text-base font-bold mb-2 text-gray-900">{children}</h2>,
+                      h3: ({ children }) => <h3 className="text-sm font-bold mb-1 text-gray-900">{children}</h3>,
+                    }}
+                  >
+                    {aiSuggestions}
+                  </ReactMarkdown>
                 </div>
               )}
             </div>
