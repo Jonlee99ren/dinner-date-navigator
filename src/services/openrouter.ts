@@ -12,15 +12,17 @@ interface OpenRouterResponse {
 }
 
 import { TavilyService } from './tavily';
+import LocationService, { LocationData } from './location';
 
 export class OpenRouterService {
   private apiKey: string;
   private baseUrl = "https://openrouter.ai/api/v1/chat/completions";
   private tavilyService: TavilyService;
-
+  private locationService: LocationService;
   constructor() {
     this.apiKey = import.meta.env.VITE_OPENROUTER_API_KEY || '';
     this.tavilyService = new TavilyService();
+    this.locationService = LocationService.getInstance();
     if (!this.apiKey) {
       console.warn('OpenRouter API key not found. Please set VITE_OPENROUTER_API_KEY in your .env.local file');
     }
@@ -52,15 +54,18 @@ export class OpenRouterService {
       console.error('OpenRouter API error:', error);
       return "I'm having trouble connecting right now. Please try again.";
     }
-  }
-  async generateDinnerResponse(userMessage: string): Promise<string> {
+  }  async generateDinnerResponse(userMessage: string): Promise<string> {
+    // Get current location data
+    const locationData = this.locationService.getCurrentLocation();
+    const locationContext = this.buildLocationContext(locationData);
+    
     // Check if the user is asking for specific restaurant information that would benefit from web search
     const needsWebSearch = this.shouldSearchWeb(userMessage);
     let webSearchResults = '';
 
     if (needsWebSearch) {
-      // Extract location and search terms from user message
-      const location = this.extractLocation(userMessage);
+      // Extract location and search terms from user message, fallback to current location
+      const location = this.extractLocation(userMessage) || this.locationService.getLocationString();
       const searchQuery = this.buildSearchQuery(userMessage);
       
       try {
@@ -75,12 +80,14 @@ export class OpenRouterService {
       role: 'system' as const,
       content: `You are a smart dinner planner assistant. Help users find restaurants based on their preferences including location, cuisine, budget, ambiance, and timing. Be conversational, friendly, and ask clarifying questions if needed. Keep responses concise and helpful. When you have enough information about their preferences (location, budget, cuisine type, timing), let them know you can help them find restaurants.
       
+      ${locationContext}
+      
       ${webSearchResults ? `Current restaurant information from the web:\n${webSearchResults}\n\nUse this information to provide accurate, up-to-date recommendations.` : ''}`
     };
 
     const userPrompt = {
       role: 'user' as const,
-      content: userMessage
+      content: `${locationContext ? `[User's current location: ${locationContext}] ` : ''}${userMessage}`
     };
 
     return this.generateResponse([systemPrompt, userPrompt]);
@@ -97,7 +104,6 @@ export class OpenRouterService {
       message.toLowerCase().includes(keyword.toLowerCase())
     );
   }
-
   private extractLocation(message: string): string {
     // Simple location extraction - could be enhanced with NLP
     const locationKeywords = ['near', 'in', 'at', 'around'];
@@ -109,7 +115,13 @@ export class OpenRouterService {
       }
     }
     
-    return 'Malaysia'; // Default location
+    // Fallback to current user location if available
+    const currentLocation = this.locationService.getCurrentLocation();
+    if (currentLocation) {
+      return currentLocation.city || currentLocation.address || `${currentLocation.latitude}, ${currentLocation.longitude}`;
+    }
+    
+    return 'Malaysia'; // Final fallback
   }
 
   private buildSearchQuery(message: string): string {
@@ -184,5 +196,133 @@ export class OpenRouterService {
       console.error('Error generating restaurant suggestions:', error);
       return "I'd be happy to help you find restaurants! Here are some general suggestions based on your preferences, though I'm having trouble accessing current information right now.";
     }
+  }
+  async generateStructuredRestaurantData(preferences: any): Promise<any[]> {
+    // Get current location data for better search context
+    const locationData = this.locationService.getCurrentLocation();
+    const locationContext = this.buildLocationContext(locationData);
+    
+    // Use current location if not specified in preferences
+    const searchLocation = preferences.location || 
+      (locationData ? this.locationService.getLocationString() : 'Malaysia');
+    
+    // Use Tavily to search for current restaurant information
+    const searchQuery = `${preferences.preferences?.join(' ')} restaurants ${searchLocation} ${preferences.budget}`;
+    
+    try {
+      const webResults = await this.tavilyService.searchRestaurants(searchQuery, searchLocation);
+      
+      const systemPrompt = {
+        role: 'system' as const,
+        content: `You are a restaurant recommendation expert. Based on the user's preferences and current restaurant information from the web, provide exactly 3-4 restaurant suggestions as a JSON array.
+
+        Each restaurant object must have this exact structure:
+        {
+          "id": "unique_id",
+          "name": "Restaurant Name",
+          "cuisine": "Cuisine Type",
+          "rating": 4.5,
+          "priceRange": "RM80-120",
+          "distance": "2.3 km",
+          "description": "Brief appealing description (max 100 chars)",
+          "image": "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800&h=600&fit=crop",
+          "features": ["Feature1", "Feature2", "Feature3"]
+        }
+
+        IMPORTANT:
+        - Return ONLY the JSON array, no other text
+        - Use realistic Unsplash image URLs for restaurant/food photos
+        - Include 2-3 relevant features per restaurant
+        - Make descriptions compelling but concise
+        - Ensure ratings are between 4.0-5.0
+        - Use appropriate distance values (0.5-5 km) based on the user's location
+        - If user location is available, prioritize restaurants closer to their location
+
+        ${locationContext ? `User's precise location: ${locationContext}` : ''}
+
+        Current restaurant information from web:
+        ${webResults}`
+      };
+
+      const userPrompt = {
+        role: 'user' as const,
+        content: `Generate structured restaurant data for these preferences: Location: ${searchLocation}, Budget: ${preferences.budget}, Preferences: ${preferences.preferences?.join(', ')}${locationContext ? ` | User's current location: ${locationContext}` : ''}`
+      };
+
+      const response = await this.generateResponse([systemPrompt, userPrompt]);
+        try {
+        // Clean up the response to extract JSON
+        let cleanResponse = response.trim();
+        
+        // Remove markdown code blocks if present
+        cleanResponse = cleanResponse.replace(/```json\s*/g, '').replace(/```\s*/g, '');
+        
+        // Try to find JSON array in the response
+        const jsonMatch = cleanResponse.match(/\[[\s\S]*\]/);
+        if (jsonMatch) {
+          const parsedData = JSON.parse(jsonMatch[0]);
+          return Array.isArray(parsedData) ? parsedData : [];
+        }
+        
+        // Fallback: try parsing the entire response
+        const parsedData = JSON.parse(cleanResponse);
+        return Array.isArray(parsedData) ? parsedData : [];
+      } catch (parseError) {
+        console.error('Error parsing structured restaurant data:', parseError);
+        console.log('Raw response:', response);
+        // Return fallback restaurants if parsing fails
+        return this.getFallbackRestaurants();
+      }
+    } catch (error) {
+      console.error('Error generating structured restaurant data:', error);
+      return this.getFallbackRestaurants();
+    }
+  }
+
+  private getFallbackRestaurants(): any[] {
+    return [
+      {
+        id: 'fallback_1',
+        name: 'Local Favorite Restaurant',
+        cuisine: 'Local',
+        rating: 4.5,
+        priceRange: 'RM60-100',
+        distance: '2.0 km',
+        description: 'Popular local restaurant with great atmosphere and authentic flavors.',
+        image: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800&h=600&fit=crop',
+        features: ['Local Favorite', 'Authentic', 'Good Value']
+      },
+      {
+        id: 'fallback_2',
+        name: 'Modern Dining Experience',
+        cuisine: 'International',
+        rating: 4.3,
+        priceRange: 'RM80-130',
+        distance: '1.5 km',
+        description: 'Contemporary restaurant with innovative dishes and stylish ambiance.',
+        image: 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=800&h=600&fit=crop',
+        features: ['Modern', 'Innovative', 'Stylish']
+      }
+    ];
+  }
+
+  private buildLocationContext(locationData: LocationData | null): string {
+    if (!locationData) return '';
+    
+    const parts = [];
+    
+    if (locationData.address) {
+      parts.push(`User's current address: ${locationData.address}`);
+    } else if (locationData.city && locationData.country) {
+      parts.push(`User's current location: ${locationData.city}, ${locationData.country}`);
+    }
+    
+    parts.push(`Coordinates: ${locationData.latitude.toFixed(6)}, ${locationData.longitude.toFixed(6)}`);
+    
+    if (locationData.accuracy && locationData.accuracy < 100) {
+      parts.push(`Location accuracy: ${Math.round(locationData.accuracy)}m (high precision)`);
+    }
+    
+    return parts.join(' | ');
   }
 }
