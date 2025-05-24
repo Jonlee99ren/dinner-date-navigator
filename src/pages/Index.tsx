@@ -2,10 +2,11 @@
 import React, { useState } from 'react';
 import ChatPrompt from '@/components/ChatPrompt';
 import PreferencesConfirm from '@/components/PreferencesConfirm';
+import Suggestions from '@/components/Suggestions';
 import BookingOptions from '@/components/BookingOptions';
 
 const Index: React.FC = () => {
-  const [currentScreen, setCurrentScreen] = useState<'chat' | 'confirm' | 'booking'>('chat');
+  const [currentScreen, setCurrentScreen] = useState<'chat' | 'confirm' | 'suggestions' | 'booking'>('chat');
   const [userPreferences, setUserPreferences] = useState({
     location: 'Near me',
     time: 'Tonight, 7 PM',
@@ -19,17 +20,22 @@ const Index: React.FC = () => {
   };
 
   const handleConfirmPreferences = () => {
+    setCurrentScreen('suggestions');
+  };
+
+  const handleContinueToBooking = () => {
     setCurrentScreen('booking');
   };
 
   const handleBack = () => {
     if (currentScreen === 'confirm') {
       setCurrentScreen('chat');
-    } else if (currentScreen === 'booking') {
+    } else if (currentScreen === 'suggestions') {
       setCurrentScreen('confirm');
+    } else if (currentScreen === 'booking') {
+      setCurrentScreen('suggestions');
     }
   };
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
       {currentScreen === 'chat' && (
@@ -40,6 +46,12 @@ const Index: React.FC = () => {
           preferences={userPreferences}
           onConfirm={handleConfirmPreferences}
           onBack={handleBack}
+        />
+      )}      {currentScreen === 'suggestions' && (
+        <Suggestions 
+          preferences={userPreferences}
+          onBack={handleBack}
+          onContinueToBooking={handleContinueToBooking}
         />
       )}
       {currentScreen === 'booking' && (
