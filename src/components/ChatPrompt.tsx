@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { OpenRouterService } from '@/services/openrouter';
 
 interface ChatPromptProps {
   onContinue: (preferences: any) => void;
@@ -16,34 +17,53 @@ const ChatPrompt: React.FC<ChatPromptProps> = ({ onContinue }) => {
     }
   ]);
   const [isTyping, setIsTyping] = useState(false);
-
-  const handleSend = () => {
+  const [openRouterService] = useState(new OpenRouterService());
+  const handleSend = async () => {
     if (!message.trim()) return;
 
     const userMessage = { type: 'user', text: message };
     setConversation(prev => [...prev, userMessage]);
+    const currentMessage = message;
     setMessage('');
     setIsTyping(true);
 
-    // Simulate AI response
-    setTimeout(() => {
+    try {
+      // Get AI response from OpenRouter
+      const aiResponseText = await openRouterService.generateDinnerResponse(currentMessage);
+      
       const aiResponse = {
         type: 'ai',
-        text: "Perfect! I understand you're looking for a beachside restaurant with live music and alcohol service, with a budget of RM100-150, near your location for tonight at 7 PM. Let me confirm these preferences with you!"
+        text: aiResponseText
       };
+      
       setConversation(prev => [...prev, aiResponse]);
       setIsTyping(false);
       
-      // Continue to next screen after a brief delay
-      setTimeout(() => {
-        onContinue({
-          location: 'Near me',
-          time: 'Tonight, 7 PM',
-          budget: 'RM100–150',
-          preferences: ['Beachside', 'Live Band', 'Serves Alcohol']
-        });
-      }, 1500);
-    }, 2000);
+      // Check if the response indicates we have enough information to proceed
+      const hasEnoughInfo = currentMessage.toLowerCase().includes('budget') && 
+                           (currentMessage.toLowerCase().includes('restaurant') || 
+                            currentMessage.toLowerCase().includes('food') ||
+                            currentMessage.toLowerCase().includes('dinner'));
+      
+      if (hasEnoughInfo || 
+          aiResponseText.toLowerCase().includes('perfect') ||
+          aiResponseText.toLowerCase().includes('great choice')) {
+        // Extract preferences and continue to next screen
+        setTimeout(async () => {
+          const allMessages = [...conversation, userMessage].map(msg => msg.text);
+          const preferences = await openRouterService.extractPreferences(allMessages);
+          onContinue(preferences);
+        }, 2000);
+      }
+    } catch (error) {
+      console.error('Error getting AI response:', error);
+      const errorResponse = {
+        type: 'ai',
+        text: "I'm having trouble connecting right now. Please try again or let me know your dining preferences and I'll help you find the perfect restaurant!"
+      };
+      setConversation(prev => [...prev, errorResponse]);
+      setIsTyping(false);
+    }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
